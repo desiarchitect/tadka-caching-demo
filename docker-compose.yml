@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tadka-cache-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: tadka
+      POSTGRES_PASSWORD: tadka
+      POSTGRES_DB: tadka
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tadka -d tadka"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: tadka-cache-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

@@ -1,0 +1,22 @@
+{
+  "name": "tadka-caching-demo",
+  "version": "1.0.0",
+  "description": "Tadka App - Caching Demo for The Desi Architect caching masterclass",
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down -v",
+    "demo:reset": "node seed.js",
+    "api:no-cache": "cross-env CACHE_ENABLED=false node server.js",
+    "api:cache-aside": "cross-env CACHE_ENABLED=true node server.js",
+    "demo:performance:no-cache": "node demos/performance-no-cache.js",
+    "demo:performance:cache-aside": "node demos/performance-cache-aside.js",
+    "demo:invalidation:stale-cache": "node demos/invalidation-stale-cache.js",
+    "demo:invalidation:explicit": "node demos/invalidation-explicit.js"
+  },
+  "dependencies": {
+    "cross-env": "^7.0.3",
+    "express": "^4.21.2",
+    "ioredis": "^5.6.1",
+    "pg": "^8.14.1"
+  }
+}
