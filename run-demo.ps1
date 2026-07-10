@@ -43,6 +43,21 @@ function Show-Menu {
     Write-Host "  5) Performance FIX      - 50 reads, Cache-Aside" -ForegroundColor White
     Write-Host "  6) Invalidation PROBLEM - stale price after DB update" -ForegroundColor White
     Write-Host "  7) Invalidation FIX     - explicit invalidation" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  Bonus Labs (repo only - not filmed):" -ForegroundColor DarkYellow
+    Write-Host "  9)  Start API - TTL lab (5s menu TTL)" -ForegroundColor White
+    Write-Host "  10) TTL PROBLEM         - stale within TTL window" -ForegroundColor White
+    Write-Host "  11) TTL FIX             - auto-refresh after expiry" -ForegroundColor White
+    Write-Host "  12) Start API - negative cache OFF" -ForegroundColor White
+    Write-Host "  13) Negative cache PROBLEM" -ForegroundColor White
+    Write-Host "  14) Start API - negative cache ON" -ForegroundColor White
+    Write-Host "  15) Negative cache FIX" -ForegroundColor White
+    Write-Host "  16) Start API - thundering herd OFF" -ForegroundColor White
+    Write-Host "  17) Thundering herd PROBLEM" -ForegroundColor White
+    Write-Host "  18) Start API - thundering herd ON" -ForegroundColor White
+    Write-Host "  19) Thundering herd FIX" -ForegroundColor White
+    Write-Host "  20) Write pattern compare (Write-Through vs Write-Behind)" -ForegroundColor White
+    Write-Host ""
     Write-Host "  8) Open Redis CLI (monitor keys)" -ForegroundColor White
     Write-Host "  0) Stop & cleanup" -ForegroundColor White
     Write-Host ""
@@ -85,6 +100,33 @@ while ($true) {
         "5" { npm run demo:performance:cache-aside }
         "6" { npm run demo:invalidation:stale-cache }
         "7" { npm run demo:invalidation:explicit }
+        "9" {
+            Write-Host "  Starting TTL lab server in new window..." -ForegroundColor Yellow
+            Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD'; npm run api:labs:ttl"
+        }
+        "10" { npm run demo:invalidation:ttl-stale }
+        "11" { npm run demo:invalidation:ttl-expired }
+        "12" {
+            Write-Host "  Starting negative-cache OFF server in new window..." -ForegroundColor Yellow
+            Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD'; npm run api:labs:negative-off"
+        }
+        "13" { npm run demo:traps:negative-cache:off }
+        "14" {
+            Write-Host "  Starting negative-cache ON server in new window..." -ForegroundColor Yellow
+            Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD'; npm run api:labs:negative-on"
+        }
+        "15" { npm run demo:traps:negative-cache:on }
+        "16" {
+            Write-Host "  Starting thundering-herd OFF server in new window..." -ForegroundColor Yellow
+            Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD'; npm run api:labs:herd-off"
+        }
+        "17" { npm run demo:traps:thundering-herd:off }
+        "18" {
+            Write-Host "  Starting thundering-herd ON server in new window..." -ForegroundColor Yellow
+            Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD'; npm run api:labs:herd-on"
+        }
+        "19" { npm run demo:traps:thundering-herd:on }
+        "20" { npm run demo:patterns:write-compare }
         "8" {
             Write-Host "  Opening Redis CLI. Type KEYS tadka:* to inspect cache keys." -ForegroundColor Yellow
             docker exec -it tadka-cache-redis redis-cli

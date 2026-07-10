@@ -39,8 +39,18 @@ async function getStats() {
   return request('/api/stats');
 }
 
-async function fetchMenu() {
-  return request(`/api/restaurants/${RESTAURANT_ID}/menu`);
+async function fetchMenu(restaurantId = RESTAURANT_ID) {
+  return request(`/api/restaurants/${restaurantId}/menu`);
+}
+
+async function fetchMenuRaw(restaurantId) {
+  const response = await fetch(`${BASE_URL}/api/restaurants/${restaurantId}/menu`);
+  const body = await response.json().catch(() => ({}));
+  return {
+    ok: response.ok,
+    status: response.status,
+    body,
+  };
 }
 
 async function updatePriceDbOnly(priceInr) {
@@ -65,10 +75,30 @@ async function updatePriceWithInvalidation(priceInr) {
   );
 }
 
-async function parallelMenuReads(count) {
+async function parallelNotFoundReads(count, restaurantId) {
   const startedAt = Date.now();
   const results = await Promise.all(
-    Array.from({ length: count }, () => fetchMenu())
+    Array.from({ length: count }, () => fetchMenuRaw(restaurantId))
+  );
+  const elapsedMs = Date.now() - startedAt;
+
+  return {
+    results,
+    elapsedMs,
+    notFoundCount: results.filter((result) => result.status === 404).length,
+    negativeCacheSources: results.filter(
+      (result) => result.body && result.body.source === 'negative-cache'
+    ).length,
+    databaseSources: results.filter(
+      (result) => result.body && result.body.source === 'database'
+    ).length,
+  };
+}
+
+async function parallelMenuReads(count, restaurantId = RESTAURANT_ID) {
+  const startedAt = Date.now();
+  const results = await Promise.all(
+    Array.from({ length: count }, () => fetchMenu(restaurantId))
   );
   const elapsedMs = Date.now() - startedAt;
   const latencies = results.map((result) => result.latencyMs);
@@ -83,6 +113,26 @@ async function parallelMenuReads(count) {
     cacheSources: results.filter((result) => result.source === 'cache').length,
     dbSources: results.filter((result) => result.source === 'database').length,
   };
+}
+
+async function writeThroughSettings(restaurantId, deliveryRadiusKm) {
+  return request(`/api/labs/restaurants/${restaurantId}/settings/write-through`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deliveryRadiusKm }),
+  });
+}
+
+async function writeBehindSettings(restaurantId, deliveryRadiusKm) {
+  return request(`/api/labs/restaurants/${restaurantId}/settings/write-behind`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deliveryRadiusKm }),
+  });
+}
+
+async function getSettingsFromDb(restaurantId) {
+  return request(`/api/labs/restaurants/${restaurantId}/settings/db`);
 }
 
 function printHeader(title) {
@@ -105,8 +155,21 @@ function printStats(stats, run) {
   console.log(`  Cache hits        : ${stats.cacheHits}`);
   console.log(`  Cache misses      : ${stats.cacheMisses}`);
   console.log(`  Cache errors      : ${stats.cacheErrors}`);
+  if (typeof stats.negativeCacheHits === 'number') {
+    console.log(`  Negative cache hits: ${stats.negativeCacheHits}`);
+  }
   if (stats.cacheEnabled) {
     console.log(`  Hit ratio         : ${(stats.hitRatio * 100).toFixed(0)}%`);
+  }
+}
+
+function assertHealthFlags(health, expected) {
+  for (const [key, value] of Object.entries(expected)) {
+    if (health[key] !== value) {
+      throw new Error(
+        `Restart the API with the correct lab mode. Expected ${key}=${value}, got ${health[key]}.`
+      );
+    }
   }
 }
 
@@ -123,9 +186,16 @@ module.exports = {
   resetStats,
   getStats,
   fetchMenu,
+  fetchMenuRaw,
   updatePriceDbOnly,
   updatePriceWithInvalidation,
   parallelMenuReads,
+  parallelNotFoundReads,
+  writeThroughSettings,
+  writeBehindSettings,
+  getSettingsFromDb,
   printHeader,
   printStats,
+  assertHealthFlags,
+  sleep,
 };

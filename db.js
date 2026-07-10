@@ -59,12 +59,18 @@ async function initSchema() {
       price_inr INTEGER NOT NULL,
       PRIMARY KEY (restaurant_id, id)
     );
+
+    CREATE TABLE IF NOT EXISTS restaurant_settings (
+      restaurant_id TEXT PRIMARY KEY REFERENCES restaurants(id),
+      delivery_radius_km INTEGER NOT NULL DEFAULT 5
+    );
   `);
 }
 
 async function seedData() {
   await initSchema();
   await pool.query('DELETE FROM menu_items');
+  await pool.query('DELETE FROM restaurant_settings');
   await pool.query('DELETE FROM restaurants');
 
   await pool.query(
@@ -76,6 +82,12 @@ async function seedData() {
     `INSERT INTO menu_items (id, restaurant_id, name, price_inr)
      VALUES ($1, $2, $3, $4)`,
     ['biryani', 'biryani-house', 'Hyderabadi Biryani', 300]
+  );
+
+  await pool.query(
+    `INSERT INTO restaurant_settings (restaurant_id, delivery_radius_km)
+     VALUES ($1, $2)`,
+    ['biryani-house', 5]
   );
 }
 
@@ -123,6 +135,43 @@ async function getMenuFromDb(restaurantId) {
   }
 }
 
+async function getSettingsFromDb(restaurantId) {
+  const result = await pool.query(
+    'SELECT restaurant_id, delivery_radius_km FROM restaurant_settings WHERE restaurant_id = $1',
+    [restaurantId]
+  );
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  const row = result.rows[0];
+  return {
+    restaurantId: row.restaurant_id,
+    deliveryRadiusKm: row.delivery_radius_km,
+  };
+}
+
+async function updateSettingsInDb(restaurantId, deliveryRadiusKm) {
+  const result = await pool.query(
+    `UPDATE restaurant_settings
+     SET delivery_radius_km = $2
+     WHERE restaurant_id = $1
+     RETURNING restaurant_id, delivery_radius_km`,
+    [restaurantId, deliveryRadiusKm]
+  );
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  const row = result.rows[0];
+  return {
+    restaurantId: row.restaurant_id,
+    deliveryRadiusKm: row.delivery_radius_km,
+  };
+}
+
 async function updateItemPrice(restaurantId, itemId, priceInr) {
   const result = await pool.query(
     `UPDATE menu_items
@@ -145,6 +194,8 @@ module.exports = {
   initSchema,
   seedData,
   getMenuFromDb,
+  getSettingsFromDb,
+  updateSettingsInDb,
   updateItemPrice,
   getDbStats,
   resetDbStats,

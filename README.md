@@ -16,6 +16,10 @@ No prior Redis experience needed. Just Docker and Node.js.
 | 2 | Act 1 Fix | Cache-Aside pattern with Redis - repeated reads absorbed |
 | 3 | Act 2 Problem | Stale cache after DB write - the 40-minute pricing bug |
 | 4 | Act 2 Fix | Explicit cache invalidation on write |
+| 5 | Bonus: TTL | Stale window vs auto-refresh after expiry |
+| 6 | Bonus: Negative cache | Bad IDs hammering DB vs cached 404 |
+| 7 | Bonus: Thundering herd | Expiry stampede vs request coalescing |
+| 8 | Bonus: Write patterns | Write-Through vs Write-Behind latency |
 
 All demos use a fictional **Tadka** food delivery app. Restaurant `biryani-house` serves Hyderabadi Biryani at Rs 300 (until the price update demo).
 
@@ -126,15 +130,118 @@ Cache key deleted, next read fetches Rs 350 from DB and repopulates cache.
 
 ---
 
+## Bonus Labs (repo only - not filmed in the video)
+
+Each lab follows the same **problem then fix** shape as Act 1 and Act 2.
+
+**Two-terminal workflow:** start the matching API mode in **Terminal 1**, run the demo script in **Terminal 2**. When a lab switches from problem to fix, stop the server (`Ctrl+C`) and restart Terminal 1 with the new `api:labs:*` command.
+
+**Run all labs automatically (after `docker compose up -d`):**
+```bash
+npm run test:smoke
+```
+
+### All commands quick reference
+
+| Lab | Terminal 1 (API) | Terminal 2 - Problem | Terminal 2 - Fix |
+|-----|------------------|----------------------|------------------|
+| TTL | `api:labs:ttl` | `demo:invalidation:ttl-stale` | `demo:invalidation:ttl-expired` |
+| Negative cache | `api:labs:negative-off` then `api:labs:negative-on` | `demo:traps:negative-cache:off` | `demo:traps:negative-cache:on` |
+| Thundering herd | `api:labs:herd-off` then `api:labs:herd-on` | `demo:traps:thundering-herd:off` | `demo:traps:thundering-herd:on` |
+| Write patterns | `api:cache-aside` | — | `demo:patterns:write-compare` |
+
+### TTL Invalidation (deck slides 32)
+
+**Terminal 1:**
+```bash
+npm run api:labs:ttl
+```
+
+**Problem:**
+```bash
+npm run demo:invalidation:ttl-stale
+```
+DB updated to Rs 350, but API still serves Rs 300 while the 5s TTL is alive.
+
+**Fix:**
+```bash
+npm run demo:invalidation:ttl-expired
+```
+After TTL expires, the next read fetches Rs 350 from PostgreSQL without a manual `DEL`.
+
+### Negative Caching (deck slide 20)
+
+**Terminal 1:**
+```bash
+npm run api:labs:negative-off
+```
+
+**Terminal 2 - Problem:**
+```bash
+npm run demo:traps:negative-cache:off
+```
+20 parallel reads for `fake-restaurant` cause 20 DB lookups.
+
+Stop the server (`Ctrl+C`). **Terminal 1 - Fix mode:**
+```bash
+npm run api:labs:negative-on
+```
+
+**Terminal 2 - Fix:**
+```bash
+npm run demo:traps:negative-cache:on
+```
+After one warm-up miss populates the negative cache, 20 parallel reads hit Redis only.
+
+### Thundering Herd (deck slides 38-39)
+
+**Terminal 1:**
+```bash
+npm run api:labs:herd-off
+```
+
+**Terminal 2 - Problem:**
+```bash
+npm run demo:traps:thundering-herd:off
+```
+After a 2s TTL expires, 50 parallel reads cause multiple DB hits.
+
+Stop the server (`Ctrl+C`). **Terminal 1 - Fix mode:**
+```bash
+npm run api:labs:herd-on
+```
+
+**Terminal 2 - Fix:**
+```bash
+npm run demo:traps:thundering-herd:on
+```
+Same load causes exactly 1 DB hit via in-process request coalescing.
+
+### Write Patterns (deck slides 21-25)
+
+Keep `npm run api:cache-aside` running.
+
+```bash
+npm run demo:patterns:write-compare
+```
+
+Prints a side-by-side comparison of Write-Through vs Write-Behind write latency and trade-offs.
+
+---
+
 ## API Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/health` | Server status + `cacheEnabled` flag |
+| GET | `/health` | Server status (`cacheEnabled`, `negativeCacheEnabled`, `coalesceMisses`, `menuTtlSeconds`) |
 | GET | `/api/restaurants/:id/menu` | Menu read (Cache-Aside when enabled) |
 | GET | `/api/stats` | DB query count, cache hits/misses |
 | PUT | `/api/admin/.../price` | Update item price in DB + invalidate cache |
 | PUT | `/api/demo/.../price-db-only` | Update price in DB only (intentionally leaves cache stale, for demo) |
+| GET | `/api/restaurants/:id/settings` | Restaurant settings read (cached when enabled) |
+| PUT | `/api/labs/.../settings/write-through` | Sync DB + Redis write (Write-Through lab) |
+| PUT | `/api/labs/.../settings/write-behind` | Fast Redis write, async DB sync (Write-Behind lab) |
+| GET | `/api/labs/.../settings/db` | Read settings directly from PostgreSQL |
 | POST | `/api/admin/reset-demo` | Reset DB + flush Redis |
 
 Toggle caching via environment variable:
@@ -169,6 +276,14 @@ For the masterclass recording, here is exactly how the scripts map to the slides
   * **What it does:** Starts the Node.js API with caching disabled. Every `/menu` request goes straight to Postgres.
 * **`npm run api:cache-aside`**
   * **What it does:** Starts the Node.js API with Cache-Aside enabled. Checks Redis first; fetches from Postgres and saves to Redis on a miss.
+* **`npm run api:labs:ttl`**
+  * **What it does:** Cache-Aside with a 5-second menu TTL (for TTL invalidation labs).
+* **`npm run api:labs:negative-off` / `api:labs:negative-on`**
+  * **What it does:** Toggles negative caching for invalid restaurant IDs.
+* **`npm run api:labs:herd-off` / `api:labs:herd-on`**
+  * **What it does:** 2-second menu TTL; coalescing off (problem) or on (fix) for thundering herd labs.
+
+**Bonus lab commands (Terminal 2):** see [Bonus Labs](#bonus-labs-repo-only---not-filmed-in-the-video) above.
 
 ---
 
@@ -227,8 +342,16 @@ docker compose down -v
 │   ├── performance-cache-aside.js
 │   ├── invalidation-stale-cache.js
 │   ├── invalidation-explicit.js
+│   ├── ttl-stale.js
+│   ├── ttl-expired.js
+│   ├── negative-cache-off.js
+│   ├── negative-cache-on.js
+│   ├── thundering-herd-off.js
+│   ├── thundering-herd-on.js
+│   ├── write-compare.js
 │   └── lib.js
-├── run-demo.ps1             # Interactive runner (Windows)
+├── scripts/smoke-test.mjs   # Runs all filmed + bonus demos
+├── run-demo.ps1             # Interactive runner (Windows, items 9-20 = bonus labs)
 └── README.md
 ```
 
